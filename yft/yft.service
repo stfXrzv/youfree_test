@@ -1,0 +1,34 @@
+[Unit]
+Description=YFT isolated YouFreeTest service
+After=network-online.target yft-pot.service
+Wants=network-online.target yft-pot.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/yft
+Environment=YFT_HOST=127.0.0.1
+Environment=YFT_PORT=8183
+Environment=YFT_ROOT=/opt/yft
+Environment=YFT_TMP=/opt/yft/tmp
+Environment=YFT_YTAPI_ROOT=/opt/yft/ytapi
+Environment=YFT_POT_PROVIDER_URL=http://127.0.0.1:4417
+Environment=YFT_FFMPEG=/usr/bin/ffmpeg
+Environment=YFT_COOKIES=/opt/yft/ytapi/private/youtube-session.cookies.txt
+Environment=YFT_AUTH_POLICY=session-first
+Environment=YFT_YTDLP_PROXY=
+ExecStart=/opt/yft/ytapi/venv/bin/python /opt/yft/server.py
+Restart=always
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/opt/yft
+PrivateTmp=true
+MemoryMax=768M
+TasksMax=48
+
+[Install]
+WantedBy=multi-user.target

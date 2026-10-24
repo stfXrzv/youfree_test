@@ -1,0 +1,11 @@
+ytapi/.env
+ytapi/secret
+ytapi/cookies*
+ytapi/private-data/
+ytapi/tmp/
+ytapi/lyrics_cache/
+ytapi/venv/
+ytapi/*.tar.gz
+tmp/
+__pycache__/
+*.log

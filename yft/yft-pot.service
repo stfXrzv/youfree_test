@@ -1,0 +1,24 @@
+[Unit]
+Description=YFT isolated YouTube PO Token Provider
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/yft/bgutil-ytdlp-pot-provider/server/node_modules
+Environment=DENO_DIR=/opt/yft/deno-cache
+ExecStart=/usr/local/bin/deno run --allow-env --allow-net --allow-ffi=. --allow-read=. ../src/main.ts --host 127.0.0.1 --port 4417
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/opt/yft
+PrivateTmp=true
+MemoryMax=256M
+TasksMax=32
+
+[Install]
+WantedBy=multi-user.target
