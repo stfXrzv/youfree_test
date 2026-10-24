@@ -7,6 +7,11 @@ tools, local launch scripts, and deployment reference files.
 - Public test URL: https://code2it.com/yft/
 - Local URL: http://127.0.0.1:8183/yft/
 - The public page returned HTTP 200 on 2026-10-24.
+- Safari resolves to a progressive HTTPS MP4 at or below 720p and the media
+  relay forwards byte ranges; other browsers retain the higher-resolution
+  FFmpeg mux path.
+- On 2026-10-24, Safari User-Agent media checks returned HTTP 206 for byte
+  ranges and ffprobe found H.264/AAC. No physical iPhone playback was verified.
 
 No API keys, OAuth secrets, cookies, account database, Python environment,
 cache, or downloaded media are included here. Configure private runtime

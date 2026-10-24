@@ -20,9 +20,10 @@ every video; upstream availability and session acceptance can change.
 - Searches YouTube music videos and displays normalized metadata and thumbnails.
 - Resolves a playable source on the server, validates formats, and keeps source
   URLs inside the server.
-- Streams through a same-origin YFT relay. FFmpeg muxes separate audio/video
-  streams to fragmented MP4 and pipes the bytes to the browser without writing
-  a full streaming file to disk.
+- Streams through a same-origin YFT relay. Desktop playback can mux separate
+  audio/video streams to fragmented MP4 with FFmpeg, without writing a full
+  streaming file to disk. Safari uses a single progressive HTTPS H.264/AAC MP4
+  source and relays upstream byte ranges for native playback and seeking.
 - Caches bytes consumed through the player in the browser Cache API. Cached
   playback supports byte ranges and can work offline after the response has
   been cached.
@@ -65,7 +66,7 @@ requests to the backend listening on loopback port 8183.
 | --- | --- | --- |
 | `GET /yft/api/health` | — | Returns service/runtime and auth-session configuration status. |
 | `GET /yft/api/search?q=...&limit=20` | Search query | Returns `{ "items": [...] }`; the limit is clamped to 1–20. |
-| `GET /yft/api/resolve?id=VIDEO_ID&refresh=1` | YouTube video ID; optional refresh | Returns ID, selected quality/mode, same-origin `mediaPath`, and expiry seconds. |
+| `GET /yft/api/resolve?id=VIDEO_ID&refresh=1` | YouTube video ID; optional refresh | Returns ID, selected quality/mode (`direct` or `mux`), same-origin `mediaPath`, and expiry seconds. Safari gets a separately cached progressive source. |
 | `GET /yft/media/VIDEO_ID` | Optional byte `Range` header | Streams through the YFT relay; it does not return an upstream provider URL. |
 | `POST /yft/api/download` | JSON `{ "id", "title", "artist" }` | Starts a temporary download and returns HTTP 202 with `jobId` and state. |
 | `GET /yft/api/download/status?id=JOB_ID` | Download job ID | Returns state, progress, error, and selected quality. |
@@ -83,9 +84,10 @@ FFmpeg source relay. It is not the browser-facing API.
   of eight starts per client IP per hour.
 - Server temporary downloads expire after 30 minutes if the browser does not
   acknowledge them.
-- Source selection tries 1440, 1280, and 1024 pixel targets, then falls back
-  to the best available source at or below 1440 pixels. Format availability
-  depends on YouTube and yt-dlp.
+- Desktop source selection tries 1440, 1280, and 1024 pixel targets, then
+  falls back to the best available source at or below 1440 pixels. Safari
+  selects a progressive HTTPS MP4 at or below 720p so the relay can preserve
+  byte-range responses. Format availability depends on YouTube and yt-dlp.
 - Cold playback includes source resolution and FFmpeg mux initialization. A
   0.5-second cold start was not demonstrated in the recorded testing.
 - YouTube can reject or revoke a session. The server reports a session-refresh
@@ -124,6 +126,12 @@ by offline playback after reload. A later VPS browser report recorded
 during offline playback, and server acknowledgement/cleanup. These are
 historical results from the source handoff; their browser evidence files were
 not part of the sanitized folder copied into this repository.
+
+On 2026-10-24, Safari User-Agent checks for two YouTube videos returned direct
+MP4 sources; byte-range requests at the beginning and mid-file returned HTTP
+206 with matching `Content-Range`, and remote ffprobe identified H.264 video
+and AAC audio. These checks validate the HTTP/media path, not playback on a
+physical iPhone.
 
 ## References
 
