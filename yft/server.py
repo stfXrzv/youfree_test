@@ -71,10 +71,10 @@ FORMAT_SELECTOR = (
     'bestvideo[height<=1440][ext=mp4]+bestaudio[ext=m4a]/'
     'best[height<=1440][ext=mp4]/best[height<=1440]/best'
 )
-# Safari's native media stack requires byte-range responses. Use YouTube's
-# progressive H.264/AAC MP4 for Safari instead of the live split-stream mux,
-# which cannot provide stable byte offsets while FFmpeg is still writing.
-SAFARI_PROGRESSIVE_SELECTOR = (
+# Safari, Firefox, and iOS browsers use YouTube's progressive H.264/AAC MP4
+# so the relay can preserve byte ranges. The live split-stream mux cannot
+# provide stable byte offsets while FFmpeg is still writing.
+PROGRESSIVE_MP4_SELECTOR = (
     'best[height<=720][ext=mp4][vcodec^=avc1][acodec^=mp4a][protocol=https]/'
     'best[height<=720][ext=mp4][vcodec^=avc1][protocol=https]/'
     'best[height<=720][ext=mp4][protocol=https]'
@@ -193,7 +193,7 @@ def _fallback_selector(max_height: int) -> str:
     )
 
 
-def _safari_progressive_fallback_selector(max_height: int) -> str:
+def _progressive_fallback_selector(max_height: int) -> str:
     return (
         f'best[height<={max_height}][ext=mp4][vcodec^=avc1][acodec^=mp4a][protocol=https]/'
         f'best[height<={max_height}][ext=mp4][vcodec^=avc1][protocol=https]/'
@@ -201,18 +201,21 @@ def _safari_progressive_fallback_selector(max_height: int) -> str:
     )
 
 
-def _is_safari(user_agent: str) -> bool:
+def _requires_progressive_source(user_agent: str) -> bool:
     ua = (user_agent or '').lower()
+    is_ios = any(device in ua for device in ('iphone', 'ipad', 'ipod'))
+    is_firefox = 'firefox/' in ua or 'fxios/' in ua
     other_browsers = ('chrome/', 'crios/', 'chromium/', 'edg/', 'edgios/',
-                      'fxios/', 'firefox/', 'opr/', 'opios/', 'duckduckgo/')
-    return 'safari/' in ua and not any(browser in ua for browser in other_browsers)
+                      'opr/', 'opios/', 'duckduckgo/')
+    is_safari = 'safari/' in ua and not any(browser in ua for browser in other_browsers)
+    return is_ios or is_firefox or is_safari
 
 
 def _resolve(video_id: str, force: bool = False, downgrade: bool = False,
-             safari: bool = False) -> dict:
+             progressive: bool = False) -> dict:
     if not VIDEO_RE.fullmatch(video_id):
         raise ValueError('Invalid video ID.')
-    cache_key = f'{video_id}:safari' if safari else video_id
+    cache_key = f'{video_id}:progressive' if progressive else video_id
     with _resolve_guard:
         lock = _resolve_locks.setdefault(video_id, threading.Lock())
     with lock:
@@ -220,11 +223,11 @@ def _resolve(video_id: str, force: bool = False, downgrade: bool = False,
         if current and not force and current['expires'] > time.time() + 15:
             return current
 
-        selector = SAFARI_PROGRESSIVE_SELECTOR if safari else FORMAT_SELECTOR
+        selector = PROGRESSIVE_MP4_SELECTOR if progressive else FORMAT_SELECTOR
         if downgrade and current and current.get('height'):
             current_height = int(current['height'])
             next_limit = next((limit for limit in QUALITY_FALLBACK_LIMITS if limit < current_height), max(240, current_height - 1))
-            selector = (_safari_progressive_fallback_selector(next_limit) if safari
+            selector = (_progressive_fallback_selector(next_limit) if progressive
                         else _fallback_selector(next_limit))
 
         proc = None
@@ -536,7 +539,8 @@ class Handler(BaseHTTPRequestHandler):
             if path == '/api/resolve':
                 video_id = (qs.get('id', [''])[0] or '').strip()
                 force = qs.get('refresh', ['0'])[0] == '1'
-                result = _resolve(video_id, force, safari=_is_safari(self.headers.get('User-Agent', '')))
+                result = _resolve(video_id, force,
+                                  progressive=_requires_progressive_source(self.headers.get('User-Agent', '')))
                 return _send_json(self, 200, {
                     'id': video_id,
                     'quality': result['quality'],
@@ -548,7 +552,7 @@ class Handler(BaseHTTPRequestHandler):
                 video_id = path.split('/', 2)[-1]
                 force = qs.get('refresh', ['0'])[0] == '1'
                 return self._serve_media(video_id, force,
-                                         safari=_is_safari(self.headers.get('User-Agent', '')))
+                                         progressive=_requires_progressive_source(self.headers.get('User-Agent', '')))
             if path == '/api/download/status':
                 job_id = (qs.get('id', [''])[0] or '').strip()
                 if not JOB_RE.fullmatch(job_id):
@@ -635,13 +639,13 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:
             return _send_json(self, 500, {'detail': str(exc)[:180]})
 
-    def _serve_media(self, video_id: str, force: bool = False, safari: bool = False):
+    def _serve_media(self, video_id: str, force: bool = False, progressive: bool = False):
         if not VIDEO_RE.fullmatch(video_id):
             return _send_json(self, 400, {'detail': 'Invalid video ID.'})
         for attempt in range(2):
             try:
                 resolved = _resolve(video_id, force or attempt > 0, downgrade=attempt > 0,
-                                    safari=safari)
+                                    progressive=progressive)
                 if len(resolved['urls']) > 1:
                     if self._serve_muxed(resolved):
                         return

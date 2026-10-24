@@ -22,8 +22,9 @@ every video; upstream availability and session acceptance can change.
   URLs inside the server.
 - Streams through a same-origin YFT relay. Desktop playback can mux separate
   audio/video streams to fragmented MP4 with FFmpeg, without writing a full
-  streaming file to disk. Safari uses a single progressive HTTPS H.264/AAC MP4
-  source and relays upstream byte ranges for native playback and seeking.
+  streaming file to disk. Safari, Firefox, and iOS browsers use a single
+  progressive HTTPS H.264/AAC MP4 source and relay upstream byte ranges for
+  playback and seeking.
 - Caches bytes consumed through the player in the browser Cache API. Cached
   playback supports byte ranges and can work offline after the response has
   been cached.
@@ -66,7 +67,7 @@ requests to the backend listening on loopback port 8183.
 | --- | --- | --- |
 | `GET /yft/api/health` | — | Returns service/runtime and auth-session configuration status. |
 | `GET /yft/api/search?q=...&limit=20` | Search query | Returns `{ "items": [...] }`; the limit is clamped to 1–20. |
-| `GET /yft/api/resolve?id=VIDEO_ID&refresh=1` | YouTube video ID; optional refresh | Returns ID, selected quality/mode (`direct` or `mux`), same-origin `mediaPath`, and expiry seconds. Safari gets a separately cached progressive source. |
+| `GET /yft/api/resolve?id=VIDEO_ID&refresh=1` | YouTube video ID; optional refresh | Returns ID, selected quality/mode (`direct` or `mux`), same-origin `mediaPath`, and expiry seconds. Safari, Firefox, and iOS browsers get a separately cached progressive source. |
 | `GET /yft/media/VIDEO_ID` | Optional byte `Range` header | Streams through the YFT relay; it does not return an upstream provider URL. |
 | `POST /yft/api/download` | JSON `{ "id", "title", "artist" }` | Starts a temporary download and returns HTTP 202 with `jobId` and state. |
 | `GET /yft/api/download/status?id=JOB_ID` | Download job ID | Returns state, progress, error, and selected quality. |
@@ -84,10 +85,11 @@ FFmpeg source relay. It is not the browser-facing API.
   of eight starts per client IP per hour.
 - Server temporary downloads expire after 30 minutes if the browser does not
   acknowledge them.
-- Desktop source selection tries 1440, 1280, and 1024 pixel targets, then
-  falls back to the best available source at or below 1440 pixels. Safari
-  selects a progressive HTTPS MP4 at or below 720p so the relay can preserve
-  byte-range responses. Format availability depends on YouTube and yt-dlp.
+- Chromium desktop source selection tries 1440, 1280, and 1024 pixel targets,
+  then falls back to the best available source at or below 1440 pixels. Safari,
+  Firefox, and iOS browsers select a progressive HTTPS MP4 at or below 720p so
+  the relay can preserve byte-range responses. Format availability depends on
+  YouTube and yt-dlp.
 - Cold playback includes source resolution and FFmpeg mux initialization. A
   0.5-second cold start was not demonstrated in the recorded testing.
 - YouTube can reject or revoke a session. The server reports a session-refresh
@@ -132,6 +134,11 @@ MP4 sources; byte-range requests at the beginning and mid-file returned HTTP
 206 with matching `Content-Range`, and remote ffprobe identified H.264 video
 and AAC audio. These checks validate the HTTP/media path, not playback on a
 physical iPhone.
+
+A fresh desktop Chrome test on 2026-10-24 played the track through the 1080p
+live-mux route with no player console error; the only browser console error
+was a missing `/favicon.ico` (404). This does not verify Firefox or physical
+iPhone playback.
 
 ## References
 

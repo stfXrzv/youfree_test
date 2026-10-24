@@ -60,11 +60,12 @@ never be served to the frontend.
    caps the limit at 20, and returns normalized video items.
 2. Resolve calls `GET /yft/api/resolve`. The server invokes yt-dlp, checks
    candidate formats, and returns the selected quality/mode plus a same-origin
-   `mediaPath`. Never return raw provider/CDN URLs to the browser. Safari is
-   detected from the request User-Agent and gets a separate resolver cache
-   entry so it cannot reuse a desktop split-stream selection.
-3. Playback requests `GET /yft/media/{videoId}`. For Safari, YFT selects one
-   progressive HTTPS MP4 at or below 720p, preferring H.264/AAC, and relays
+   `mediaPath`. Never return raw provider/CDN URLs to the browser. Safari,
+   Firefox, and all iOS browsers are detected from the request User-Agent and
+   get a separate resolver cache entry so they cannot reuse a desktop
+   split-stream selection.
+3. Playback requests `GET /yft/media/{videoId}`. For those clients, YFT selects
+   one progressive HTTPS MP4 at or below 720p, preferring H.264/AAC, and relays
    browser `Range` requests upstream along with the source response's range
    headers. This gives native Safari playback stable byte offsets. Other
    browsers use the existing higher-resolution path: separate audio/video
@@ -92,7 +93,7 @@ proxying to the backend.
 | --- | --- |
 | `GET /api/health` | JSON with `ok`, service name, runtime, auth policy, and whether a session file is configured. |
 | `GET /api/search?q=QUERY&limit=20` | `{ "items": [...] }`; missing query returns 400; limit is clamped to 1–20. |
-| `GET /api/resolve?id=VIDEO_ID[&refresh=1]` | `{ "id", "quality", "mode", "mediaPath", "expiresIn" }`; `mode` is `direct` or `mux`. IDs must be 11-character YouTube IDs. Safari resolves to a progressive source in a separate cache entry. |
+| `GET /api/resolve?id=VIDEO_ID[&refresh=1]` | `{ "id", "quality", "mode", "mediaPath", "expiresIn" }`; `mode` is `direct` or `mux`. IDs must be 11-character YouTube IDs. Safari, Firefox, and iOS clients resolve to a progressive source in a separate cache entry. |
 | `GET /media/VIDEO_ID` | Relayed media bytes. The direct source path forwards browser byte ranges upstream and returns range headers; the FFmpeg mux path is streaming-only and advertises `Accept-Ranges: none`. |
 | `POST /api/download` | JSON track object with `id`, optional `title`, `artist`; HTTP 202 returns `{ "jobId", "state": "queued" }`. |
 | `GET /api/download/status?id=JOB_ID` | `{ "state", "progress", "error", "quality" }`. |
@@ -134,9 +135,9 @@ host's current configuration.
 - 500 MB maximum explicit download, at most two concurrent workers, and eight
   download starts per client IP per hour.
 - Browser stream cache target: 300 MB total and 120 MB per entry.
-- Safari playback is limited to progressive MP4 sources at or below 720p;
-  available codecs/formats depend on YouTube and yt-dlp. Other browsers keep
-  the existing higher-resolution mux path.
+- Safari, Firefox, and iOS playback uses progressive MP4 sources at or below
+  720p; available codecs/formats depend on YouTube and yt-dlp. Chromium desktop
+  keeps the existing higher-resolution mux path.
 - Keep resolved provider URLs server-side. Avoid logging query strings,
   cookies, or source URLs.
 - Copy cookie files to temporary mode-0600 files for yt-dlp, then remove those
@@ -163,10 +164,12 @@ format availability can change. A stale or revoked session can cause a
 resolver failure; refresh the session through the authorized process, not by
 committing a cookie file. Cold starts still include yt-dlp resolution and
 FFmpeg setup; a 0.5-second cold-start target was not reached in recorded
-testing. Also on 2026-10-24, Safari User-Agent checks for two videos returned
-direct progressive sources; start and mid-file byte-range requests returned
-206 with matching `Content-Range`, and ffprobe identified H.264/AAC. This was
-HTTP and stream inspection, not physical iPhone playback verification.
+testing. On 2026-10-24, Safari User-Agent checks for two videos returned direct
+progressive sources; start and mid-file byte-range requests returned 206 with
+matching `Content-Range`, and ffprobe identified H.264/AAC. A fresh desktop
+Chrome session played through the existing mux path without a player console
+error; its only console error was a favicon 404. Firefox and physical iPhone
+playback are not verified by this evidence.
 
 ## Change checklist for the next AI
 
