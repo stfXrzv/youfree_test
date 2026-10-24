@@ -20,6 +20,60 @@
   const recentList = $('recentList');
   const downloadsList = $('downloadsList');
   const player = $('player');
+  const resolveWarmUntil = new Map();
+  const resolveWarmQueue = [];
+  let resolveWarmInFlight = null;
+  let resolveWarmObserver = null;
+
+  function queueResolveWarm(track, urgent = false) {
+    if (!track?.id || !/^[A-Za-z0-9_-]{11}$/.test(track.id)) return;
+    const warmUntil = resolveWarmUntil.get(track.id) || 0;
+    if (warmUntil > Date.now() || resolveWarmQueue.some((item) => item.id === track.id)) return;
+    if (resolveWarmInFlight?.id === track.id) return;
+    if (resolveWarmQueue.length >= 4 && !urgent) return;
+    const item = { id: track.id, track };
+    if (urgent) {
+      for (let i = resolveWarmQueue.length - 1; i >= 0; i--) {
+        if (resolveWarmQueue[i].id === track.id) resolveWarmQueue.splice(i, 1);
+      }
+      resolveWarmQueue.unshift(item);
+    } else {
+      resolveWarmQueue.push(item);
+    }
+    runResolveWarmQueue();
+  }
+
+  async function runResolveWarmQueue() {
+    if (resolveWarmInFlight || !resolveWarmQueue.length) return;
+    const item = resolveWarmQueue.shift();
+    resolveWarmInFlight = item;
+    try {
+      const response = await fetch(`${API}/resolve?id=${encodeURIComponent(item.id)}`, {
+        headers: { Accept: 'application/json' }, cache: 'no-store'
+      });
+      resolveWarmUntil.set(item.id, Date.now() + (response.ok ? 20 * 60 * 1000 : 60 * 1000));
+    } catch {
+      resolveWarmUntil.set(item.id, Date.now() + 60 * 1000);
+    } finally {
+      resolveWarmInFlight = null;
+      runResolveWarmQueue();
+    }
+  }
+
+  function observeResolveWarm(row, track) {
+    if (!('IntersectionObserver' in window)) return;
+    if (!resolveWarmObserver) {
+      resolveWarmObserver = new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          resolveWarmObserver.unobserve(entry.target);
+          queueResolveWarm(entry.target._yftWarmTrack);
+        }
+      }, { rootMargin: '220px 0px', threshold: 0.01 });
+    }
+    row._yftWarmTrack = track;
+    resolveWarmObserver.observe(row);
+  }
 
   function safeJson(value, fallback) {
     try { return JSON.parse(value); } catch { return fallback; }
@@ -228,6 +282,10 @@
     play.title = options.downloaded ? 'Play saved video' : 'Play stream';
     play.setAttribute('aria-label', `${play.title}: ${track.title}`);
     play.addEventListener('click', () => options.downloaded ? playDownloaded(options.record) : playTrack(track));
+    if (options.prewarm) {
+      play.addEventListener('pointerdown', () => queueResolveWarm(track, true), { passive: true });
+      observeResolveWarm(row, track);
+    }
     actions.append(play);
 
     if (options.downloaded) {
@@ -296,6 +354,8 @@
     if (commitHistory || document.activeElement !== searchInput) searchHistory.hidden = true;
     resultsSection.hidden = false;
     $('resultsTitle').textContent = `Results for “${query}”`;
+    resolveWarmObserver?.disconnect();
+    resolveWarmQueue.length = 0;
     resultsList.replaceChildren();
     $('resultsEmpty').hidden = true;
     searchStatus.textContent = 'Searching YouTube…';
@@ -306,7 +366,7 @@
       if (!response.ok) throw new Error(data.detail || data.error || 'Search failed.');
       if (requestId !== state.searchRequest) return;
       state.results = Array.isArray(data.items) ? data.items.map(normalizeTrack).filter((item) => item.id) : [];
-      resultsList.replaceChildren(...state.results.map((track) => trackRow(track)));
+      resultsList.replaceChildren(...state.results.map((track) => trackRow(track, { prewarm: true })));
       $('resultsEmpty').hidden = state.results.length > 0;
       searchStatus.textContent = `${state.results.length} results`;
     } catch (error) {

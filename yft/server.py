@@ -237,7 +237,10 @@ def _resolve(video_id: str, force: bool = False, downgrade: bool = False,
             if use_session and not cookie_copy:
                 continue
             cmd = _yt_dlp_base(cookie_copy, client) + [
-                '--format', selector, '--check-formats', '--dump-single-json', '--skip-download',
+                # The media relay validates the chosen URL while opening it and
+                # already retries with a fresh resolution if that source fails.
+                # Avoiding format probes keeps cold playback off extra requests.
+                '--format', selector, '--dump-single-json', '--skip-download',
                 '--', f'https://www.youtube.com/watch?v={video_id}'
             ]
             try:
